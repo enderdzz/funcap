@@ -17,7 +17,7 @@ renamed_functions = pickle.load(open(dumpfile, "r"))
 print "Loading function names from %s." % dumpfile
 
 for f in list(Functions()):
-    name = GetFunctionName(f)
+    name = get_func_name(f)
 
     function = get_func(f)
     flen = function.size()
@@ -25,7 +25,7 @@ for f in list(Functions()):
         bytes_read = flen
     else:
         bytes_read = BYTES_COMPARE
-    start_bytes = GetManyBytes(function.startEA, bytes_read)
+    start_bytes = get_bytes(function.startEA, bytes_read)
     m = md5.new()
     m.update("%x" % flen)
     m.update(start_bytes)
@@ -33,5 +33,5 @@ for f in list(Functions()):
     if digest in renamed_functions.keys():
         new_name = renamed_functions[digest]
         print "Renaming %s to %s" % (name, new_name)
-        MakeName(function.startEA, new_name)
+        set_name(function.startEA, new_name, SN_CHECK)
 

@@ -15,7 +15,7 @@ BYTES_COMPARE = 10
 renamed_functions = {}
 
 for f in list(Functions()):
-    name = GetFunctionName(f)
+    name = get_func_name(f)
     if re.match("sub_", name):
         continue
     function = get_func(f)
@@ -24,7 +24,7 @@ for f in list(Functions()):
         bytes_read = flen
     else:
         bytes_read = BYTES_COMPARE
-    start_bytes = GetManyBytes(function.startEA, bytes_read)
+    start_bytes = get_bytes(function.startEA, bytes_read)
     m = md5.new()
     m.update("%x" % flen)
     m.update(start_bytes)

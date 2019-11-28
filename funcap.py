@@ -44,17 +44,22 @@ import pickle
 from idaapi import *
 from idautils import *
 from idc import *
+from ida_entry import *
+from ida_struct import *
+from ida_bytes import *
+from ida_dbg import *
+from ida_funcs import *
 
 # utility functions
 
 def format_name(ea):
-    name = GetFunctionName(ea)
+    name = get_func_name(ea)
     if name == "" or name == None:
         name = "0x%x" % ea
     return name
 
 def format_offset(ea):
-    offset = GetFuncOffset(ea)
+    offset = get_func_off_str(ea)
     if offset == "" or offset == None:
         offset = "0x%x" % ea
     return offset
@@ -196,7 +201,7 @@ class FunCapHook(DBG_Hooks):
         Add breakpoints on all function starts
         '''
         for f in list(Functions()):
-            AddBpt(f)
+            add_bpt(f)
 
     def addFuncRet(self):
         '''
@@ -207,10 +212,10 @@ class FunCapHook(DBG_Hooks):
             for head in Heads(seg_ea, SegEnd(seg_ea)):
 
                 # If it's an instruction
-                if isCode(GetFlags(head)):
+                if is_code(get_full_flags(head)):
 
                     if self.is_ret(head):
-                        AddBpt(head)
+                        add_bpt(head)
 
     def addCallee(self):
         '''
@@ -231,8 +236,8 @@ class FunCapHook(DBG_Hooks):
         if func:
             ea = LocByName(func)
         else:
-            ea = ScreenEA()
-            func = GetFunctionName(ea)
+            ea = get_screen_ea()
+            func = get_func_name(ea)
 
         self.output("hooking function: %s()" % func)
 
@@ -255,7 +260,7 @@ class FunCapHook(DBG_Hooks):
         if seg:
             ea = None
             for s in Segments():
-                if seg == SegName(s):
+                if seg == get_segm_name(s):
                     ea = s
                     break
 
@@ -263,11 +268,11 @@ class FunCapHook(DBG_Hooks):
                 self.output("WARNING: cannot hook segment %s" % seg)
                 return
         else:
-            ea = ScreenEA()
-            seg = SegName(ea)
+            ea = get_screen_ea()
+            seg = get_segm_name(ea)
         self.output("hooking segment: %s" % seg)
-        start_ea = SegStart(ea)
-        end_ea = SegEnd(ea)
+        start_ea = get_segm_start(ea)
+        end_ea = get_segm_end(ea)
         if jump:
             self.add_call_and_jump_bp(start_ea, end_ea)
         else:
@@ -287,8 +292,8 @@ class FunCapHook(DBG_Hooks):
         Delete all breakpoints
         '''
 
-        for bp in range(GetBptQty(), 0, -1):
-            DelBpt(GetBptEA(bp))
+        for bp in range(get_bpt_qty(), 0, -1):
+            del_bpt(get_bpt_ea(bp))
 
     def graph(self, exact_offsets = False):
         '''
@@ -314,7 +319,7 @@ class FunCapHook(DBG_Hooks):
         '''
 
         self.stop_points.append(ea)
-        AddBpt(ea)
+        add_bpt(ea)
 
     ###
     # END of public interface
@@ -331,10 +336,10 @@ class FunCapHook(DBG_Hooks):
         for head in Heads(start_ea, end_ea):
 
             # If it's an instruction
-            if isCode(GetFlags(head)):
+            if is_code(get_full_flags(head)):
 
                 if self.is_call(head):
-                    AddBpt(head)
+                    add_bpt(head)
 
     def add_call_and_jump_bp(self, start_ea, end_ea):
         '''
@@ -348,10 +353,10 @@ class FunCapHook(DBG_Hooks):
         for head in Heads(start_ea, end_ea):
 
             # If it's an instruction
-            if isCode(GetFlags(head)):
+            if is_code(get_full_flags(head)):
 
                 if (self.is_call(head) or self.is_jump(head)):
-                    AddBpt(head)
+                    add_bpt(head)
 
 
     def get_num_args_stack(self, addr):
@@ -362,7 +367,7 @@ class FunCapHook(DBG_Hooks):
 
         '''
 
-        argFrameSize = GetStrucSize(GetFrame(addr)) - GetFrameSize(addr) + GetFrameArgsSize(addr)
+        argFrameSize = get_struc_size(get_func_attr(addr, FUNCATTR_FRAME)) - get_frame_size(addr) + get_func_attr(addr, FUNCATTR_ARGSIZE)
         return argFrameSize / (self.bits/8)
 
     def get_caller(self):
@@ -399,7 +404,7 @@ class FunCapHook(DBG_Hooks):
         for line in lines:
             # workaround with Eval() - ExtLinA() doesn't work well in idapython
             line_sanitized = line.replace('"', '\\"')
-            ret = idc.Eval('ExtLinA(%d, %d, "%s");' % (ea, idx, line_sanitized))
+            ret = idc.eval_idc('ExtLinA(%d, %d, "%s");' % (ea, idx, line_sanitized))
             if ret:
                 self.output("idc.Eval() returned an error: %s" % ret)
             idx += 1
@@ -453,7 +458,7 @@ class FunCapHook(DBG_Hooks):
                     memval = next_memval
                     next_memval = getword(memval)
 
-            function_name=GetFuncOffset(prev_memval)#no more dereferencing. is this a function ?
+            function_name = get_func_off_str(prev_memval) #no more dereferencing. is this a function ?
             if (function_name):
                 valchain_full += " (%s)" % function_name
                 valchain_cmt += " (%s)" % function_name
@@ -528,7 +533,7 @@ class FunCapHook(DBG_Hooks):
                     memval = next_memval
                     next_memval = getword(memval)
 
-            function_name=GetFuncOffset(prev_memval)#no more dereferencing. is this a function ?
+            function_name = get_func_off_str(prev_memval) #no more dereferencing. is this a function ?
             if (function_name):
                 valchain_full += " (%s)" % function_name
                 valchain_cmt += " (%s)" %  function_name
@@ -591,7 +596,7 @@ class FunCapHook(DBG_Hooks):
             valchain_full = format_string_full % (reg['name'], reg['value'])
             valchain_cmt = format_string_cmt % (reg['name'], reg['value'])
             prev_memval = reg['value']
-            memval=getword(reg['value'])
+            memval = getword(reg['value'])
             next_memval = getword(memval)
 
             if (self.multiple_dereferences):
@@ -609,7 +614,7 @@ class FunCapHook(DBG_Hooks):
                     memval = next_memval
                     next_memval = getword(memval)
 
-            function_name=GetFuncOffset(prev_memval)#no more dereferencing. is this a function ?
+            function_name = get_func_off_str(prev_memval) #no more dereferencing. is this a function ?
             if (function_name):
                 valchain_full += " (%s)" % function_name
                 valchain_cmt += " (%s)" %  function_name
@@ -649,7 +654,7 @@ class FunCapHook(DBG_Hooks):
                                 break
                             if (prev_memval == memval):#points at itself
                                 break
-                            maxdepth-=1
+                            maxdepth -= 1
                             valchain_full += format_string_append % memval
                             valchain_cmt += format_string_append % memval
 
@@ -657,7 +662,7 @@ class FunCapHook(DBG_Hooks):
                             memval = next_memval
                             next_memval = getword(memval)
 
-                    function_name=GetFuncOffset(prev_memval)#no more dereferencing. is this a function ?
+                    function_name = get_func_off_str(prev_memval) #no more dereferencing. is this a function ?
                     if (function_name):
                         valchain_full += " (%s)" % function_name
                         valchain_cmt += " (%s)" %  function_name
@@ -818,7 +823,7 @@ class FunCapHook(DBG_Hooks):
 
 
     def dereference(self, address, size):
-        return GetManyBytes(address, size, use_dbg=True)
+        return get_bytes(address, size, use_dbg=True)
 
     def smart_format(self, raw_data, maxlen, print_dots=True):
         '''
@@ -917,7 +922,7 @@ class FunCapHook(DBG_Hooks):
         Called when breakpoint hit on ret instruction
         '''
 
-        function_name = GetFunctionName(ea)
+        function_name = get_func_name(ea)
         caller = self.format_caller(self.get_caller())
         if function_name:
             header = "At function end: %s (0x%x) " % (function_name,ea) + "to " + caller
@@ -972,7 +977,7 @@ class FunCapHook(DBG_Hooks):
         Called when breakpoint hit on the beginning of a function
         '''
 
-        name = GetFunctionName(ea)
+        name = get_func_name(ea)
 
         caller_ea = self.get_caller()
         caller_offset = self.format_caller(caller_ea)
@@ -982,7 +987,7 @@ class FunCapHook(DBG_Hooks):
 
         raw_context= self.get_context(ea=ea)
         if self.colors:
-            SetColor(ea, CIC_FUNC, self.FUNC_COLOR)
+            set_color(ea, CIC_FUNC, self.FUNC_COLOR)
 
         # update data for graph
         if not self.calls_graph.has_key(ea):
@@ -1012,7 +1017,7 @@ class FunCapHook(DBG_Hooks):
         raw_context = self.get_context(ea=ea, depth=self.depth)
         (context_full, context_comments) = self.format_normal(raw_context)
         if self.colors:
-            SetColor(ea, CIC_ITEM, self.ITEM_COLOR)
+            set_color(ea, CIC_ITEM, self.ITEM_COLOR)
 
         if self.comments and (self.overwrite_existing or ea not in self.visited):
             self.add_comments(ea, context_comments)
@@ -1034,7 +1039,7 @@ class FunCapHook(DBG_Hooks):
 
         #print "handle_call: 0x%x" % ea
         if self.colors:
-            SetColor(ea, CIC_ITEM, self.CALL_COLOR)
+            set_color(ea, CIC_ITEM, self.CALL_COLOR)
 
     def handle_jump(self, ea):
         '''
@@ -1052,21 +1057,21 @@ class FunCapHook(DBG_Hooks):
         '''
 
         if self.comments:
-            MakeComm(self.current_caller['addr'], "0x%x" % ea)
-        seg_name = SegName(ea)
-        if self.code_discovery and (not isCode(GetFlags(ea)) or not self.isCode) and not self.is_system_lib(seg_name):
+            set_cmt(self.current_caller['addr'], "0x%x" % ea, 0)
+        seg_name = get_segm_name(ea)
+        if self.code_discovery and (not is_code(get_full_flags(ea)) or not self.isCode) and not self.is_system_lib(seg_name):
             self.output("New code segment discovered: %s (0x%x => 0x%x)" % (seg_name, self.current_caller['addr'], ea))
-            start_ea = SegStart(ea)
-            end_ea = SegEnd(ea)
+            start_ea = get_segm_start(ea)
+            end_ea = get_segm_end(ea)
             refresh_debugger_memory()
-            if not MakeCode(ea):
-                ins = DecodeInstruction(ea)
+            if not create_insn(ea):
+                ins = decode_insn(ea)
                 if ins.size:
-                    MakeUnknown(ea, ins.size, DOUNK_EXPAND)
-                    if not MakeCode(ea):
+                    del_items(ea, ins.size, DOUNK_EXPAND)
+                    if not create_insn(ea):
                         self.output("handle_after_jump(): unable to make code at 0x%x" % ea)
 
-            AnalyzeArea(start_ea, end_ea)
+            plan_and_wait(start_ea, end_ea)
             self.add_call_and_jump_bp(start_ea, end_ea)
 
         self.current_caller = self.delayed_caller
@@ -1077,55 +1082,55 @@ class FunCapHook(DBG_Hooks):
         Try to get a name of a function. If function does not exists at ea, tries to create/discover it.
         '''
 
-        name = GetFunctionName(ea)
+        name = get_func_name(ea)
         symbol_name = Name(ea)
 
         if symbol_name and name and symbol_name != name and not re.match("loc_", symbol_name):
             self.output("WARNING: IDA has probably wrongly analyzed the following function: %s and " \
                         "it is overlapping with another symbol: %s. Funcap will undefine it. " % (name, symbol_name))
-            DelFunction(LocByName(name))
+            del_func(get_name_ea_simple(name))
             name = None
 
         if name: return name
 
         need_hooking = False
         #refresh_debugger_memory() # SegName didn't seem to work sometimes
-        seg_name = SegName(ea)
-        if self.code_discovery and not self.is_system_lib(seg_name) and (not isCode(GetFlags(ea)) or not self.isCode):
+        seg_name = get_segm_name(ea)
+        if self.code_discovery and not self.is_system_lib(seg_name) and (not is_code(get_full_flags(ea)) or not self.isCode):
             #print "need_hooking :: ea: %x, seg_name: %s" % (ea, seg_name)
             need_hooking = True
 
         refresh_debugger_memory() # need to call this here (thx IlfakG)
         # this should normally work for dynamic libraries
 
-        r = MakeFunction(ea)
+        r = add_func(ea)
         if not r:
             # this might be dynamically created code (such as obfuscation etc.)
-            if MakeCode(ea):
+            if create_insn(ea):
                 # fine, we try again
-                r = MakeFunction(ea)
+                r = add_func(ea)
                 if not r:
                     self.output("WARNING: unable to create function at 0x%x" % ea)
             else:
                 # undefining also helps. Last try (thx IgorS)
-                ins = DecodeInstruction(ea)
+                ins = decode_insn(ea)
                 if ins.size:
-                    MakeUnknown(ea, ins.size, DOUNK_EXPAND)
-                    if MakeCode(ea):
+                    del_items(ea, ins.size, DOUNK_EXPAND)
+                    if create_insn(ea):
                         # weird but worked on my example ... calling the same twice
                         refresh_debugger_memory()
-                        r = MakeFunction(ea)
+                        r = add_func(ea)
                         refresh_debugger_memory()
-                        r = MakeFunction(ea)
+                        r = add_func(ea)
                         if not r:
                             self.output("WARNING: unable to create function at 0x%x" % ea)
 
         if need_hooking:
-            start_ea = SegStart(ea)
-            end_ea = SegEnd(ea)
+            start_ea = get_segm_start(ea)
+            end_ea = get_segm_end(ea)
             refresh_debugger_memory()
             self.output("0x%x: new code section detected: [0x%x, 0x%x]" % (ea, start_ea, end_ea))
-            AnalyzeArea(start_ea, end_ea)
+            plan_and_wait(start_ea, end_ea)
             if self.code_discovery_stop:
                 self.resume = False
             if self.code_discovery_nojmp:
@@ -1134,9 +1139,9 @@ class FunCapHook(DBG_Hooks):
                 self.add_call_and_jump_bp(start_ea, end_ea)
 
         if r:
-            name = GetFunctionName(ea)
-            func_end = GetFunctionAttr(ea, FUNCATTR_END)
-            AnalyzeArea(ea, func_end)
+            name = get_func_nme(ea)
+            func_end = get_func_attr(ea, FUNCATTR_END)
+            plan_and_wait(ea, func_end)
             return name
         else:
             return None
@@ -1149,7 +1154,7 @@ class FunCapHook(DBG_Hooks):
         ea = self.get_ip()
 
         if self.is_fake_call(ea):
-            MakeComm(self.current_caller['addr'], "fake function call to 0x%x" % ea)
+            set_cmt(self.current_caller['addr'], "fake function call to 0x%x" % ea, 0)
             self.output("0x%X: fake function call to 0x%x" % (self.current_caller['addr'],ea))
             self.current_caller = self.delayed_caller
             self.delayed_caller = None
@@ -1157,7 +1162,7 @@ class FunCapHook(DBG_Hooks):
 
         #print "handle_after_call(): 0x%x" % ea
 
-        seg_name = SegName(ea)
+        seg_name = get_segm_name(ea)
 
         if self.no_dll and self.is_system_lib(seg_name):
             # skipping API calls
@@ -1212,11 +1217,11 @@ class FunCapHook(DBG_Hooks):
         self.calls_graph[ea]['callers'].append({ 'name' : caller_name, 'ea' : caller_ea, 'offset' : caller })
         self.calls_graph[ea]['name'] = name
 
-        if CheckBpt(ret_addr) > 0:
+        if check_bpt(ret_addr) > 0:
             user_bp = True
         else:
             user_bp = False
-            AddBpt(ret_addr) # catch return from the function if not user-added breakpoint
+            add_bpt(ret_addr) # catch return from the function if not user-added breakpoint
 
         # fetch the operand for "ret" - will be needed when we will capture the return from the function
         ret_shift = self.calc_ret_shift(ea)
@@ -1243,13 +1248,13 @@ class FunCapHook(DBG_Hooks):
         # insert IDA's comments
         if self.comments and (self.overwrite_existing or caller_ea not in self.visited):
             self.add_comments(caller_ea, context_comments)
-            MakeComm(caller_ea, "%s()" % name)
+            set_cmt(caller_ea, "%s()" % name, 0)
 
         # next time we don't need to insert comments (unles overwrite_existing is set)
         self.visited.append(caller_ea)
 
         if self.colors:
-            SetColor(ea, CIC_FUNC, self.FUNC_COLOR)
+            set_color(ea, CIC_FUNC, self.FUNC_COLOR)
 
     def is_system_lib(self, name):
         '''
@@ -1265,15 +1270,15 @@ class FunCapHook(DBG_Hooks):
 
         sysfolders = [re.compile("\\\\windows\\\\", re.I), re.compile("\\\\Program Files ", re.I), re.compile("/usr/", re.I), \
                       re.compile("/system/", re.I), re.compile("/lib/", re.I)]
-        m = GetFirstModule()
+        m = get_first_module()
         while m:
-            path = GetModuleName(m)
+            path = get_module_name(m)
             if re.search(name, path):
                 if any(regex.search(path) for regex in sysfolders):
                     return True
                 else:
                     return False
-            m = GetNextModule(m)
+            m = get_next_module(m)
         return False
 
     ###
@@ -1297,7 +1302,7 @@ class FunCapHook(DBG_Hooks):
         if ea in self.function_calls.keys(): # coming back from a call we previously stopped on
             self.handle_return(ea)
             if self.function_calls[ea]['user_bp'] == False:
-                DelBpt(ea)
+                del_bpt(ea)
                 if self.resume:
                     request_continue_process()
                     run_requests()
@@ -1316,7 +1321,7 @@ class FunCapHook(DBG_Hooks):
             run_requests()
             # we don't want ResumeProcess() to be called so we end it up here
             if self.delete_breakpoints:
-                DelBpt(ea)
+                del_bpt(ea)
             return 0
 
         elif self.is_call(ea): # stopped on a call to a function
@@ -1326,7 +1331,7 @@ class FunCapHook(DBG_Hooks):
             request_step_into()
             run_requests()
             if self.delete_breakpoints:
-                DelBpt(ea)
+                del_bpt(ea)
             return 0
 
         else: # not call, not ret, and not start of any function
@@ -1334,7 +1339,7 @@ class FunCapHook(DBG_Hooks):
                 self.handle_generic(ea)
 
         if self.delete_breakpoints:
-            DelBpt(ea)
+            del_bpt(ea)
         if self.resume:
             request_continue_process()
             run_requests()
@@ -1407,7 +1412,7 @@ class X86CapHook(FunCapHook):
         '''
         Check if we are at return from subroutine instruction
         '''
-        mnem = GetMnem(ea)
+        mnem = print_insn_mnem(ea)
         return re.match('ret', mnem)
 
     def is_call(self, ea):
@@ -1422,7 +1427,7 @@ class X86CapHook(FunCapHook):
         '''
         Check if we are at jump to subrouting instruction
         '''
-        mnem = GetMnem(ea)
+        mnem = print_insn_mnem(ea)
         return re.match('jmp', mnem)
 
     def get_context(self, general_only=True, ea=None, depth=None, stack_offset = 1):
@@ -1438,7 +1443,7 @@ class X86CapHook(FunCapHook):
         for x in idaapi.dbg_get_registers():
             name = x[0]
             if not general_only or (re.match("E", name) and name != 'ES'):
-                value = idc.GetRegValue(name)
+                value = idc.get_reg_value(name)
                 regs.append({'name': name, 'value': value, 'deref': self.dereference(value, 2 * self.STRING_LENGTH)})
         if ea != None or depth != None:
             regs = regs + self.get_stack_args(ea, depth=depth, stack_offset=stack_offset)
@@ -1449,20 +1454,20 @@ class X86CapHook(FunCapHook):
         Captures args from memory. If not depth given, number of args is dynamically created from IDA's analysis
         '''
         l = []
-        stack = idc.GetRegValue('ESP')
+        stack = idc.get_reg_value('ESP')
         if depth == None: depth = self.get_num_args_stack(ea)+1
         argno = 0
         for arg in range(stack_offset, depth):
-            value = DbgDword(stack+arg*4)
+            value = read_dbg_dword(stack+arg*4)
             l.append({'name': "arg_%02x" % argno, 'value': value, 'deref': self.dereference(value, 2 * self.STRING_LENGTH)})
             argno = argno + 4
         return l
 
     def get_ip(self):
-        return GetRegValue('EIP')
+        return get_reg_value('EIP')
 
     def get_sp(self):
-        return GetRegValue('ESP')
+        return get_reg_value('ESP')
 
     def get_saved_sp(self, context):
         return self.getRegValueFromCtx('ESP', context)
@@ -1471,7 +1476,7 @@ class X86CapHook(FunCapHook):
         '''
         Get the return address stored on the stack or register
         '''
-        return DbgDword(GetRegValue('ESP'))
+        return read_dbg_dword(get_reg_value('ESP'))
 
     def calc_ret_shift(self, ea):
         '''
@@ -1480,16 +1485,16 @@ class X86CapHook(FunCapHook):
         @param ea: address belonging to a function
         '''
 
-        first_head = GetFunctionAttr(ea, FUNCATTR_START)
-        curr_head = PrevHead(GetFunctionAttr(ea, FUNCATTR_END))
+        first_head = get_func_attr(ea, FUNCATTR_START)
+        curr_head = prev_head(get_func_attr(ea, FUNCATTR_END))
         while curr_head >= first_head:
-            mnem = GetMnem(curr_head)
+            mnem = print_insn_mnem(curr_head)
             ret_match = re.match('ret', mnem)
             if ret_match:
                 break
-            curr_head = PrevHead(curr_head)
+            curr_head = prev_head(curr_head)
         if curr_head >= first_head:
-            op = GetOpnd(curr_head, 0)
+            op = print_operand(curr_head, 0)
             if op:
                 ret_shift = int(re.sub('h$', '', op), 16)
             else:
@@ -1514,11 +1519,11 @@ class X86CapHook(FunCapHook):
 
         # a bit of a workaround - we need to know if it is code or note before making it code. Needed for code_discovery
 
-        if(isCode(GetFlags(ea))):
+        if(is_code(get_full_flags(ea))):
             self.isCode = True
         else:
             self.isCode = False
-            MakeCode(ea)
+            create_insn(ea)
 
         disasm = GetDisasm(ea)
         if re.match('^jmp', disasm):
@@ -1530,7 +1535,7 @@ class X86CapHook(FunCapHook):
         # kernel32.dll:76401487 8B EC                         mov     ebp, esp
         # kernel32.dll:76401489 5D                            pop     ebp
         # kernel32.dll:7640148A E9 2D FF FF FF                jmp     sub_764013BC
-        dbytes = GetManyBytes(ea, 7, use_dbg=True)
+        dbytes = get_bytes(ea, 7, use_dbg=True)
         if dbytes == "\x8b\xff\x55\x8b\xec\x5d\xe9" or dbytes == "\x8b\xff\x55\x8b\xec\x5d\xeb":
             return 5
         # no stubs. You can define your custom stubs here
@@ -1541,7 +1546,7 @@ class X86CapHook(FunCapHook):
         Check if it is a fake call and function should not be analyzed there
         Currently only checking call-to-pops, what else ?
         '''
-        mnem = GetMnem(ea)
+        mnem = print_insn_mnem(ea)
         return re.match('pop', mnem)
 
 class AMD64CapHook(FunCapHook):
@@ -1561,21 +1566,21 @@ class AMD64CapHook(FunCapHook):
         '''
         Check if we are at return from subroutine instruction
         '''
-        mnem = GetMnem(ea)
+        mnem = print_insn_mnem(ea)
         return re.match('ret', mnem)
 
     def is_call(self, ea):
         '''
         Check if we are at jump to subrouting instruction
         '''
-        mnem = GetMnem(ea)
+        mnem = print_insn_mnem(ea)
         return re.match('call', mnem)
 
     def is_jump(self, ea):
         '''
         Check if we are at jump to subrouting instruction
         '''
-        mnem = GetMnem(ea)
+        mnem = print_insn_mnem(ea)
         return re.match('jmp', mnem)
 
     def get_context(self, general_only=True, ea=None, depth=None, stack_offset = 1):
@@ -1592,7 +1597,7 @@ class AMD64CapHook(FunCapHook):
         for x in idaapi.dbg_get_registers():
             name = x[0]
             if not general_only or (re.match("R", name) and name != 'RS'):
-                value = idc.GetRegValue(name)
+                value = idc.get_reg_value(name)
                 regs.append({'name': name, 'value': value, 'deref': self.dereference(value, 2 * self.STRING_LENGTH)})
         if ea != None or depth != None:
             if ea != None or depth != None:
@@ -1604,20 +1609,20 @@ class AMD64CapHook(FunCapHook):
         Captures args from memory. If not depth given, number of args is dynamically created from IDA's analysis
         '''
         l = []
-        stack = idc.GetRegValue('RSP')
+        stack = idc.get_reg_value('RSP')
         if depth == None: depth = self.get_num_args_stack(ea)+1
         argno = 0
         for arg in range(stack_offset, depth):
-            value = DbgQword(stack+arg*8)
+            value = read_dbg_qword(stack+arg*8)
             l.append({'name': "arg_%02x" % argno, 'value': value, 'deref': self.dereference(value, 2 * self.STRING_LENGTH)})
             argno = argno + 8
         return l
 
     def get_ip(self):
-        return GetRegValue('RIP')
+        return get_reg_value('RIP')
 
     def get_sp(self):
-        return GetRegValue('RSP')
+        return get_reg_value('RSP')
 
     def get_saved_sp(self, context):
         return self.getRegValueFromCtx('RSP', context)
@@ -1626,7 +1631,7 @@ class AMD64CapHook(FunCapHook):
         '''
         Get the return address stored on the stack or register
         '''
-        return DbgQword(GetRegValue('RSP'))
+        return read_dbg_qword(get_reg_value('RSP'))
 
     def calc_ret_shift(self, ea):
         '''
@@ -1634,16 +1639,16 @@ class AMD64CapHook(FunCapHook):
 
         @param ea: address belonging to a function
         '''
-        first_head = GetFunctionAttr(ea, FUNCATTR_START)
-        curr_head = PrevHead(GetFunctionAttr(ea, FUNCATTR_END))
+        first_head = get_func_attr(ea, FUNCATTR_START)
+        curr_head = prev_head(get_func_attr(ea, FUNCATTR_END))
         while curr_head >= first_head:
-            mnem = GetMnem(curr_head)
+            mnem = print_insn_mnem(curr_head)
             ret_match = re.match('ret', mnem)
             if ret_match:
                 break
-            curr_head = PrevHead(curr_head)
+            curr_head = prev_head(curr_head)
         if curr_head >= first_head:
-            op = GetOpnd(curr_head, 0)
+            op = print_operand(curr_head, 0)
             if op:
                 ret_shift = int(re.sub('h$', '', op), 16)
             else:
@@ -1672,7 +1677,7 @@ class AMD64CapHook(FunCapHook):
         Check if it is a fake call and function should not be analyzed there
         Currently only checking call-to-pops, what else ?
         '''
-        mnem = GetMnem(ea)
+        mnem = print_insn_mnem(ea)
         return re.match('pop', mnem)
 
 
@@ -1702,7 +1707,7 @@ class ARMCapHook(FunCapHook):
         Check if we are at jump to subrouting instruction
         '''
 
-        mnem = GetMnem(ea)
+        mnem = print_insn_mnem(ea)
         return re.match('BL', mnem)
 
     def is_jump(self, ea):
@@ -1710,7 +1715,7 @@ class ARMCapHook(FunCapHook):
         Check if we are at jump to subrouting instruction
         '''
 
-        mnem = GetMnem(ea)
+        mnem = print_insn_mnem(ea)
         return re.match('B\s+', mnem)
 
     def get_context(self, general_only=True, ea=None, depth=None):
@@ -1723,7 +1728,7 @@ class ARMCapHook(FunCapHook):
         l = []
         for x in idaapi.dbg_get_registers():
             name = x[0]
-            value = idc.GetRegValue(name)
+            value = idc.get_reg_value(name)
             l.append({'name': name, 'value': value, 'deref': self.dereference(value, 2 * self.STRING_LENGTH)})
             # don't know yet how to get the argument frame size on this arch so we don't show stack-passed arguments here
             # Still, we have first four arguments in registers R0-R4
@@ -1734,10 +1739,10 @@ class ARMCapHook(FunCapHook):
         return []
 
     def get_ip(self):
-        return GetRegValue('PC')
+        return get_reg_value('PC')
 
     def get_sp(self):
-        return GetRegValue('SP')
+        return get_reg_value('SP')
 
     def get_saved_sp(self, context):
         return self.getRegValueFromCtx('SP', context)
@@ -1748,7 +1753,7 @@ class ARMCapHook(FunCapHook):
         '''
 
         # clearing the low bit (denotes ARM or Thumb mode)
-        return GetRegValue('LR') & 0xFFFFFFFE
+        return get_reg_value('LR') & 0xFFFFFFFE
 
     def calc_ret_shift(self, ea):
         return 0 # no ret_shift here
@@ -1785,7 +1790,7 @@ class CallGraph(GraphViewer):
         for hit, call in self.calls.items():
             #current_call = self.calls[hit]
             name = call['name']
-            current_name = GetFunctionName(hit) # check if the user has changed the name of a function
+            current_name = get_func_name(hit) # check if the user has changed the name of a function
             if current_name:
                 name = current_name
             #name = current_call['name']
@@ -1798,12 +1803,12 @@ class CallGraph(GraphViewer):
                     caller_name = caller['offset']
                     graph_caller = caller['ea']
                 else:
-                    graph_caller = GetFunctionAttr(caller['ea'], FUNCATTR_START)
+                    graph_caller = get_func_attr(caller['ea'], FUNCATTR_START)
                     if graph_caller == 0xffffffff: # no symbol exist
                         graph_caller = caller['ea']
                         caller_name = caller['name']
                     else:
-                        caller_name = GetFunctionName(graph_caller)
+                        caller_name = get_func_name(graph_caller)
                 if not node_callers.has_key(graph_caller):
                     #print "adding node %x" % caller
                     self.nodes[graph_caller] = self.AddNode((graph_caller, caller_name))
@@ -1842,18 +1847,18 @@ class Auto:
         '''
         d.off()
         d.delAll()
-        start = GetEntryOrdinal(0)
-        AddBpt(start)
-        segname = SegName(start)
-        StartDebugger('', '', '')
-        GetDebuggerEvent(WFNE_SUSP, -1);
+        start = get_entry_ordinal(0)
+        add_bpt(start)
+        segname = get_segm_name(start)
+        start_process('', '', '')
+        wait_for_next_event(WFNE_SUSP, -1);
         print "Auto: program entry point reached"
-        DelBpt(start)
-        d.addStop(LocByName("ntdll_RtlExitUserProcess"))
-        d.addStop(LocByName("kernel32_ExitProcess"))
+        del_bpt(start)
+        d.addStop(get_name_ea_simple("ntdll_RtlExitUserProcess"))
+        d.addStop(get_name_ea_simple("kernel32_ExitProcess"))
         d.on()
         d.hookSeg(seg = segname)
-        ResumeProcess()
+        resume_process()
 
     def win_func_capture(self):
         '''
@@ -1861,17 +1866,17 @@ class Auto:
         '''
         d.off()
         d.delAll()
-        start = GetEntryOrdinal(0)
-        AddBpt(start)
-        StartDebugger('', '', '')
-        GetDebuggerEvent(WFNE_SUSP, -1);
+        start = get_entry_ordinal(0)
+        add_bpt(start)
+        start_process('', '', '')
+        wait_for_next_event(WFNE_SUSP, -1);
         print "Auto: program entry point reached"
-        DelBpt(start)
-        d.addStop(LocByName("ntdll_RtlExitUserProcess"))
-        d.addStop(LocByName("kernel32_ExitProcess"))
+        del_bpt(start)
+        d.addStop(get_name_ea_simple("ntdll_RtlExitUserProcess"))
+        d.addStop(get_name_ea_simple("kernel32_ExitProcess"))
         d.on()
         d.addCallee()
-        ResumeProcess()
+        resume_process()
 
     def win_code_discovery(self):
         '''
@@ -1879,18 +1884,18 @@ class Auto:
         '''
         d.off()
         d.delAll()
-        start = GetEntryOrdinal(0)
-        AddBpt(start)
-        StartDebugger('', '', '')
-        GetDebuggerEvent(WFNE_SUSP, -1);
+        start = get_entry_ordinal(0)
+        add_bpt(start)
+        start_process('', '', '')
+        wait_for_next_event(WFNE_SUSP, -1);
         print "Auto: program entry point reached"
-        DelBpt(start)
-        d.addStop(LocByName("kernel32_ExitProcess")) # last breakpoint before the process terminates, to give a chance to take a memory snapshot
-        d.addStop(LocByName("ntdll_RtlExitUserProcess")) # to be sure we add 2 possibilities, there is probably more ...
+        del_bpt(start)
+        d.addStop(get_name_ea_simple("kernel32_ExitProcess")) # last breakpoint before the process terminates, to give a chance to take a memory snapshot
+        d.addStop(get_name_ea_simple("ntdll_RtlExitUserProcess")) # to be sure we add 2 possibilities, there is probably more ...
         d.on()
         d.code_discovery = True
         d.addCJ(func = GetFunctionName(start))
-        ResumeProcess()
+        resume_process()
 
 ###
 # main()
